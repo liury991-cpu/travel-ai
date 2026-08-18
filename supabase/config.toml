@@ -1,0 +1,61 @@
+# Supabase 本地/云端通用配置
+# 文档：https://supabase.com/docs/guides/cli/config
+project_id = "travel-ai"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1:54321"
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:5173"
+# Vercel 部署后改成你的正式域名；本地开发用 5173（Vite）
+additional_redirect_urls = ["http://127.0.0.1:5173", "https://travel-ai.vercel.app"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+[auth.providers]
+# GitHub 登录（Vercel 部署时在 Supabase 控制台填入 GitHub OAuth App 的 Client ID/Secret）
+[auth.providers.github]
+enabled = true
+client_id = "env(GITHUB_CLIENT_ID)"
+secret = "env(GITHUB_CLIENT_SECRET)"
+
+[edge_runtime]
+enabled = true
+
+[analytics]
+enabled = false

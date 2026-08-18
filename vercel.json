@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [{ "source": "/(.*)", "destination": "/" }],
+  "functions": {
+    "api/plan.ts": { "maxDuration": 60 },
+    "api/trains.ts": { "maxDuration": 30 },
+    "api/flights.ts": { "maxDuration": 30 },
+    "api/auth/callback.ts": { "maxDuration": 30 }
+  },
+  "env": {
+    "TMAP_KEY": "@tmap_key",
+    "VITE_TMAP_KEY": "@tmap_key",
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_ANON_KEY": "@supabase_anon_key",
+    "SUPABASE_SERVICE_ROLE_KEY": "@supabase_service_role_key"
+  }
+}
