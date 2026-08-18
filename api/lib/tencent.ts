@@ -109,7 +109,7 @@ export async function poiSearch(
   url.searchParams.set('region', region);
   url.searchParams.set('page_size', String(pageSize));
   const res = await fetch(url);
-  const json = await res.json();
+  const json: any = await res.json();
   if (json.status !== 0) throw new Error('poi_search: ' + json.message);
   return json.data ?? [];
 }
