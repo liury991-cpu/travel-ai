@@ -36,6 +36,15 @@ function estimateFare(fromCity: string, toCity: string) {
 const AIRLINES = [
   { code: 'CA', name: '国航' }, { code: 'MU', name: '东航' }, { code: 'CZ', name: '南航' }, { code: 'HU', name: '海航' },
 ];
+
+// 城市级 IATA 码（用于携程机票搜索深链）
+const CITY_IATA: Record<string, string> = {
+  北京: 'BJS', 上海: 'SHA', 广州: 'CAN', 深圳: 'SZX', 成都: 'CTU', 杭州: 'HGH',
+  西安: 'XIY', 重庆: 'CKG', 南京: 'NKG', 武汉: 'WUH', 长沙: 'CSX', 厦门: 'XMN',
+  青岛: 'TAO', 昆明: 'KMG', 丽江: 'LJG', 三亚: 'SYX', 桂林: 'KWL', 拉萨: 'LXA',
+  天津: 'TSN', 苏州: 'SHA', 香港: 'HKG', 哈尔滨: 'HRB', 沈阳: 'SHE', 济南: 'TNA',
+  郑州: 'CGO', 福州: 'FOC', 贵阳: 'KWE', 兰州: 'LHW', 乌鲁木齐: 'URC', 南宁: 'NNG',
+};
 function hash(str: string): number {
   let h = 2166136261;
   for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -61,8 +70,14 @@ export default async function handler(req: any, res: any) {
   try {
     const { from, to, date } = req.body || {};
     if (!from || !to) return res.status(400).json({ error: 'from/to required' });
-    const flights = mockFlights(from, to, date);
-    return res.status(200).json({ from, to, date, flights,
+    const d = date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+    const flights = mockFlights(from, to, d);
+    // 携程机票搜索深链（城市级 IATA 码）
+    const fp = CITY_IATA[from]; const tp = CITY_IATA[to];
+    const buyUrl = fp && tp
+      ? `https://flights.ctrip.com/online/list/oneway-${fp.toLowerCase()}-${tp.toLowerCase()}?depdate=${d}`
+      : 'https://flights.ctrip.com/';
+    return res.status(200).json({ from, to, date: d, flights, buyUrl,
       note: '机票为演示数据；接入真实比价 API 后替换内部实现即可' });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'flight query failed' });

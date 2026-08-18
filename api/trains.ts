@@ -29,70 +29,48 @@ const STATIONS_BUILTIN: Record<string, string> = (() => {
   return m;
 })();
 
+// 直接用内置 3384 站映射（毫秒级），避免在线拉取在海外节点卡住导致 Lambda 超时
 let _stations: Record<string, string> | null = null;
-
-async function loadStations(): Promise<Record<string, string>> {
+function loadStations(): Record<string, string> {
   if (_stations) return _stations;
-  // 优先在线拉取最新车站表（新路径），失败则用内置兜底
-  try {
-    const res = await fetch('https://kyfw.12306.cn/otn/resources/js/framework/station_name.js', {
-      headers: { 'User-Agent': HEADERS['User-Agent'] },
-    } as any);
-    if (res.ok) {
-      const txt = await res.text();
-      const body = txt.replace(/^var\s+station_names\s*=\s*'/, '').replace(/';?\s*$/, '');
-      const map: Record<string, string> = {};
-      for (const chunk of body.split('@')) {
-        if (!chunk) continue;
-        const f = chunk.split('|');
-        const name = f[1]; const code = f[2];
-        if (name && code) { if (!map[name]) map[name] = code; if (f[0] && !map[f[0]]) map[f[0]] = code; }
-      }
-      if (Object.keys(map).length > 100) { _stations = map; return map; }
-    }
-  } catch (_) { /* 用内置兜底 */ }
   _stations = STATIONS_BUILTIN;
   return _stations;
 }
 
-async function getCookie(): Promise<string> {
-  try {
-    const res = await fetch('https://kyfw.12306.cn/otn/leftTicket/init?linktypeid=dc', { headers: HEADERS, redirect: 'manual' } as any);
-    const cookies = (res.headers.getSetCookie?.() as string[]) || [];
-    return cookies.map((c) => c.split(';')[0]).join('; ');
-  } catch (_) { return ''; }
+// 限时 Promise：超时返回 fallback，绝不阻塞 Lambda（避免 FUNCTION_INVOCATION_TIMEOUT）
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  const timer = new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms));
+  return Promise.race([p, timer]);
 }
 
 async function queryTrains(fromName: string, toName: string, date: string): Promise<{ trains: TrainOption[]; source: '12306' | 'fallback' }> {
-  const stations = await loadStations();
+  const stations = loadStations();
   const fromCode = stations[fromName] || stations[fromName + '站'];
   const toCode = stations[toName] || stations[toName + '站'];
   if (!fromCode || !toCode) throw new Error('车站未找到：' + (!fromCode ? fromName : toName));
-  try {
-    const cookie = await getCookie();
-    const params = new URLSearchParams({
-      'leftTicketDTO.train_date': date, 'leftTicketDTO.from_station': fromCode,
-      'leftTicketDTO.to_station': toCode, purpose_codes: 'ADULT',
-    });
-    const res = await fetch(`https://kyfw.12306.cn/otn/leftTicket/query?${params}`, { headers: { ...HEADERS, Cookie: cookie } } as any);
-    const json: any = await res.json();
-    const result: string[] = json?.data?.result ?? [];
-    if (!result.length) throw new Error('no_result');
-    const trains: TrainOption[] = result.map((raw) => {
-      const f = raw.split('|');
-      const v = (k: string) => f[F[k]] || '--';
-      const seats: Record<string, string> = {
-        swz: v('swz'), tz: v('tz'), zy: v('zy'), ze: v('ze'), gr: v('gr'), rw: v('rw'), dw: v('dw'),
-        yw: v('yw'), rz: v('rz'), yz: v('yz'), wz: v('wz'),
-      };
-      return { trainCode: v('trainCode'), fromStation: fromName, toStation: toName, departTime: v('departTime'),
-        arriveTime: v('arriveTime'), duration: v('duration'), canBuy: v('canBuy') === 'Y', seats };
-    });
-    return { trains, source: '12306' };
-  } catch (_) {
-    // 实时查询失败（限流/海外节点/无票接口异常）→ 降级：返回空车次 + 来源标记，由调用方给出估算
-    return { trains: [], source: 'fallback' };
-  }
+  // 直接查余票（不取 cookie，12306 对无 cookie 查询通常仍可返回）；fetch 限时 6s
+  const params = new URLSearchParams({
+    'leftTicketDTO.train_date': date, 'leftTicketDTO.from_station': fromCode,
+    'leftTicketDTO.to_station': toCode, purpose_codes: 'ADULT',
+  });
+  const res = await fetch(`https://kyfw.12306.cn/otn/leftTicket/query?${params}`, {
+    headers: HEADERS,
+    signal: (AbortSignal as any).timeout(6000),
+  } as any);
+  const json: any = await res.json();
+  const result: string[] = json?.data?.result ?? [];
+  if (!result.length) throw new Error('no_result');
+  const trains: TrainOption[] = result.map((raw) => {
+    const f = raw.split('|');
+    const v = (k: string) => f[F[k]] || '--';
+    const seats: Record<string, string> = {
+      swz: v('swz'), tz: v('tz'), zy: v('zy'), ze: v('ze'), gr: v('gr'), rw: v('rw'), dw: v('dw'),
+      yw: v('yw'), rz: v('rz'), yz: v('yz'), wz: v('wz'),
+    };
+    return { trainCode: v('trainCode'), fromStation: fromName, toStation: toName, departTime: v('departTime'),
+      arriveTime: v('arriveTime'), duration: v('duration'), canBuy: v('canBuy') === 'Y', seats };
+  });
+  return { trains, source: '12306' };
 }
 
 const CITY_COORD: Record<string, [number, number]> = {
@@ -123,19 +101,24 @@ export function estimateFare(fromCity: string, toCity: string) {
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
-  try {
-    const { from, to, date } = req.body || {};
-    if (!from || !to) return res.status(400).json({ error: 'from/to required' });
-    const d = date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
-    const { trains, source } = await queryTrains(from, to, d);
-    const fare = estimateFare(from, to);
-    const trainsWithPrice = trains.map((t) => ({ ...t, prices: fare }));
-    return res.status(200).json({
-      date: d, from, to, trains: trainsWithPrice,
-      fareNote: source === '12306' ? '票价为城市间距估算（非 12306 实时价）' : '12306 实时查询暂不可用，以下为距离估算票价',
-      source,
-    });
-  } catch (e: any) {
-    return res.status(500).json({ error: e?.message || 'train query failed' });
-  }
+  const { from, to, date } = req.body || {};
+  if (!from || !to) return res.status(400).json({ error: 'from/to required' });
+  const d = date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' });
+  // 限时尝试 12306 实时查询（fetch 已限 6s）；任何超时/失败都降级为估算，绝不 500
+  const realtime = queryTrains(from, to, d).catch(() => ({ trains: [] as TrainOption[], source: 'fallback' as const }));
+  const { trains, source } = await withTimeout(realtime, 9000, { trains: [] as TrainOption[], source: 'fallback' as const });
+  const fare = estimateFare(from, to);
+  const trainsWithPrice = trains.map((t) => ({ ...t, prices: fare }));
+  // 12306 深链：预填出发/到达/日期，直达余票查询页
+  const stations = loadStations();
+  const fromCode = stations[from] || stations[from + '站'];
+  const toCode = stations[to] || stations[to + '站'];
+  const buyUrl = fromCode && toCode
+    ? `https://kyfw.12306.cn/otn/leftTicket/init?linktypeid=dc&fs=${encodeURIComponent(from)},${fromCode}&ts=${encodeURIComponent(to)},${toCode}&date=${d}&flag=N,N,Y`
+    : 'https://kyfw.12306.cn/otn/leftTicket/init';
+  return res.status(200).json({
+    date: d, from, to, trains: trainsWithPrice, buyUrl,
+    fareNote: source === '12306' ? '车次为 12306 实时余票（票价为距离估算）' : '12306 实时查询暂不可用，以下为距离估算票价',
+    source,
+  });
 }

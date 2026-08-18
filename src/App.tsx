@@ -50,6 +50,8 @@ export default function App() {
   const [flights, setFlights] = useState<FlightOption[]>([]);
   const [transportLoading, setTransportLoading] = useState(false);
   const [transportSource, setTransportSource] = useState<'12306' | 'fallback' | null>(null);
+  const [trainBuyUrl, setTrainBuyUrl] = useState('');
+  const [flightBuyUrl, setFlightBuyUrl] = useState('');
 
   const [user, setUser] = useState<any>(null);
   const [saved, setSaved] = useState<SavedPlan[]>([]);
@@ -102,24 +104,35 @@ export default function App() {
   // —— 交通查询 ——
   const queryTransport = async () => {
     setTransportLoading(true);
+    setTransportSource(null);
     try {
-      const [t, f] = await Promise.all([
+      const [tRes, fRes] = await Promise.all([
         fetch('/api/trains', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(trainForm),
-        }).then((r) => r.json()),
+        }),
         fetch('/api/flights', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(trainForm),
-        }).then((r) => r.json()),
+        }),
       ]);
-      setTrains(t.trains ?? []);
-      setFlights(f.flights ?? []);
-      setTransportSource((t.source as '12306' | 'fallback') ?? '12306');
+      // 容错解析：任一接口返回非 JSON（如错误页/超时）也不崩溃，该项显示为空并提示降级
+      let t: any = { trains: [], source: 'fallback' as const };
+      let f: any = { flights: [] };
+      try { t = await tRes.json(); } catch (_) { /* 非 JSON 响应 */ }
+      try { f = await fRes.json(); } catch (_) { /* 非 JSON 响应 */ }
+      setTrains(Array.isArray(t.trains) ? t.trains : []);
+      setFlights(Array.isArray(f.flights) ? f.flights : []);
+      setTransportSource((t.source as '12306' | 'fallback') ?? 'fallback');
+      setTrainBuyUrl(t.buyUrl ?? '');
+      setFlightBuyUrl(f.buyUrl ?? '');
     } catch (e: any) {
-      alert('交通查询失败：' + e.message);
+      setTrains([]);
+      setFlights([]);
+      setTransportSource('fallback');
+      alert('交通查询失败：' + (e?.message || e));
     } finally {
       setTransportLoading(false);
     }
@@ -562,25 +575,28 @@ export default function App() {
               {transportLoading ? '查询中…' : '查高铁 / 机票'}
             </button>
 
+            {/* 对比卡片：高铁 vs 机票 */}
             {(cheapestTrain || cheapestFlight) && (
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-xl bg-brand-50 dark:bg-white/5 p-3">
-                  <div className="text-xs text-slate-500">高铁最便宜（二等座估算）</div>
-                  <div className="font-semibold text-lg mt-1">
-                    {cheapestTrain ? `¥${cheapestTrain.prices!.second}` : '—'}
-                  </div>
-                  <div className="text-xs text-slate-500">
+                <div className="rounded-xl bg-brand-50 dark:bg-white/5 p-3 flex flex-col">
+                  <div className="text-xs text-slate-500">高铁（二等座）</div>
+                  <div className="font-semibold text-lg mt-1">{cheapestTrain ? `¥${cheapestTrain.prices!.second}` : '—'}</div>
+                  <div className="text-xs text-slate-500 mb-2">
                     {cheapestTrain ? `${cheapestTrain.trainCode} ${cheapestTrain.departTime}→${cheapestTrain.arriveTime}` : '无票'}
                   </div>
+                  {trainBuyUrl && (
+                    <a href={trainBuyUrl} target="_blank" rel="noreferrer" className="mt-auto text-center text-xs px-2 py-1.5 rounded-lg bg-brand-600 text-white font-medium hover:bg-brand-700 transition">去 12306 购票 ↗</a>
+                  )}
                 </div>
-                <div className="rounded-xl bg-emerald-50 dark:bg-white/5 p-3">
-                  <div className="text-xs text-slate-500">机票最便宜</div>
-                  <div className="font-semibold text-lg mt-1">
-                    {cheapestFlight ? `¥${cheapestFlight.price}` : '—'}
+                <div className="rounded-xl bg-emerald-50 dark:bg-white/5 p-3 flex flex-col">
+                  <div className="text-xs text-slate-500">机票</div>
+                  <div className="font-semibold text-lg mt-1">{cheapestFlight ? `¥${cheapestFlight.price}` : '—'}</div>
+                  <div className="text-xs text-slate-500 mb-2">
+                    {cheapestFlight ? `${cheapestFlight.airline} ${cheapestFlight.flightNo} ${cheapestFlight.departTime}→${cheapestFlight.arriveTime}` : '无数据'}
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {cheapestFlight ? `${cheapestFlight.airline} ${cheapestFlight.departTime}→${cheapestFlight.arriveTime}` : '无数据'}
-                  </div>
+                  {flightBuyUrl && (
+                    <a href={flightBuyUrl} target="_blank" rel="noreferrer" className="mt-auto text-center text-xs px-2 py-1.5 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition">去携程购票 ↗</a>
+                  )}
                 </div>
               </div>
             )}
@@ -591,37 +607,61 @@ export default function App() {
               </div>
             )}
 
+            {/* 高铁班次明细 */}
             {trains.length > 0 && (
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-slate-500">
-                    <tr>
-                      <th className="text-left p-1">车次</th>
-                      <th className="p-1">出发→到达</th>
-                      <th className="p-1">耗时</th>
-                      <th className="p-1">二等座</th>
-                      <th className="p-1">状态</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {trains.slice(0, 8).map((t, i) => (
-                      <tr key={i} className="border-t border-slate-100 dark:border-white/10">
-                        <td className="p-1 font-medium">{t.trainCode}</td>
-                        <td className="p-1 tabular-nums">{t.departTime}→{t.arriveTime}</td>
-                        <td className="p-1 tabular-nums text-slate-500">{t.duration}</td>
-                        <td className="p-1 tabular-nums">{t.prices ? `¥${t.prices.second}` : '—'}</td>
-                        <td className={`p-1 ${t.canBuy ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {t.canBuy ? '可购' : '售罄'}
-                        </td>
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold">🚄 高铁班次（{trains.length}）</h4>
+                  {trainBuyUrl && <a href={trainBuyUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">12306 购票 ↗</a>}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="text-slate-500">
+                      <tr>
+                        <th className="text-left p-1.5">车次</th>
+                        <th className="p-1.5">出发→到达</th>
+                        <th className="p-1.5">耗时</th>
+                        <th className="p-1.5">二等/一等/商务</th>
+                        <th className="p-1.5">余票</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {trains.slice(0, 10).map((t, i) => (
+                        <tr key={i} className="border-t border-slate-100 dark:border-white/10">
+                          <td className="p-1.5 font-semibold text-brand-600">{t.trainCode}</td>
+                          <td className="p-1.5 tabular-nums">{t.departTime}→{t.arriveTime}</td>
+                          <td className="p-1.5 tabular-nums text-slate-500">{t.duration}</td>
+                          <td className="p-1.5 tabular-nums">{t.prices ? `¥${t.prices.second} / ¥${t.prices.first} / ¥${t.prices.business}` : '—'}</td>
+                          <td className={`p-1.5 ${t.canBuy ? 'text-emerald-500' : 'text-rose-500'}`}>{t.canBuy ? '有票' : '售罄'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
+
+            {/* 航班明细 */}
             {flights.length > 0 && (
-              <div className="mt-3 text-xs text-slate-500">
-                共 {flights.length} 个航班（演示数据）。接入真实比价 API 后此处显示实时价格。
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-semibold">✈️ 航班（{flights.length}）</h4>
+                  {flightBuyUrl && <a href={flightBuyUrl} target="_blank" rel="noreferrer" className="text-xs text-emerald-600 hover:underline">携程购票 ↗</a>}
+                </div>
+                <div className="space-y-2">
+                  {flights.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-xl border border-slate-100 dark:border-white/10 p-3">
+                      <div>
+                        <div className="text-sm font-semibold">{f.airline} <span className="text-emerald-600">{f.flightNo}</span></div>
+                        <div className="text-xs text-slate-500 tabular-nums">{f.departTime} → {f.arriveTime} · 约{Math.floor(f.durationMin / 60)}小时{f.durationMin % 60}分</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-lg">¥{f.price}</div>
+                        <div className="text-[10px] text-slate-400">{f.provider}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
