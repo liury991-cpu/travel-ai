@@ -30,7 +30,7 @@ export interface Plan {
   totalBudget: number;
   pois: PlanItem[];
   generatedAt: string;
-  source: 'tencent' | 'mock';
+  source: 'tencent' | 'llm' | 'mock';
 }
 
 export interface TrainOption {
