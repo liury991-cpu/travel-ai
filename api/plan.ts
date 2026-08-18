@@ -2,7 +2,7 @@
 import { generatePlan } from './lib/plan';
 
 export const config = {
-  runtime: 'nodejs18.x',
+  runtime: 'nodejs',
   maxDuration: 60,
 };
 
