@@ -7,6 +7,23 @@ import type { Plan, PlanItem, PoiCategory, TrainOption, FlightOption } from './l
 
 const TMAP_KEY = (import.meta.env.VITE_TMAP_KEY as string) || '';
 
+// 按景点名从中文维基百科拉取配图（限时，失败返回 null 走占位图）
+async function fetchPoiImage(name: string, city?: string): Promise<string | null> {
+  const titles = [name, city ? `${name} (${city})` : '', city ? `${city} ${name}` : ''].filter(Boolean) as string[];
+  for (const title of titles) {
+    try {
+      const url = `https://zh.wikipedia.org/w/api.php?action=query&prop=pageimages&piprop=original|thumbnail&pithumbsize=900&redirects=1&titles=${encodeURIComponent(title)}&format=json&origin=*`;
+      const r = await fetch(url, { signal: (AbortSignal as any).timeout(5000) } as any);
+      const j = await r.json();
+      const pages = j?.query?.pages ?? {};
+      const page = Object.values(pages)[0] as any;
+      const img = page?.original?.source || page?.thumbnail?.source;
+      if (img && typeof img === 'string') return img;
+    } catch (_) { /* 尝试下一个候选名 */ }
+  }
+  return null;
+}
+
 const CATEGORIES: Record<PoiCategory, { label: string; color: string; emoji: string }> = {
   sight: { label: '景点', color: '#3b62ff', emoji: '🏞️' },
   food: { label: '美食', color: '#ff7a45', emoji: '🍜' },
@@ -44,6 +61,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [activeDay, setActiveDay] = useState(1);
   const [selected, setSelected] = useState<PlanItem | null>(null);
+  const [detail, setDetail] = useState<PlanItem | null>(null);
+  const [detailImg, setDetailImg] = useState<string | null>(null);
 
   const [trainForm, setTrainForm] = useState({ from: '北京', to: '成都', date: '' });
   const [trains, setTrains] = useState<TrainOption[]>([]);
@@ -298,6 +317,18 @@ export default function App() {
     [flights],
   );
 
+  // 详情弹窗：按景点名异步加载维基配图（失败则显示占位）
+  useEffect(() => {
+    if (!detail) { setDetailImg(null); return; }
+    let cancelled = false;
+    setDetailImg(null);
+    (async () => {
+      const img = await fetchPoiImage(detail.name, plan?.city);
+      if (!cancelled) setDetailImg(img);
+    })();
+    return () => { cancelled = true; };
+  }, [detail, plan?.city]);
+
   const togglePref = (p: string) =>
     setForm((f) => ({
       ...f,
@@ -492,7 +523,7 @@ export default function App() {
                     initial={{ opacity: 0, x: -12 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0 }}
-                    onClick={() => flyTo(it)}
+                    onClick={() => { flyTo(it); setDetail(it); }}
                     className={`w-full text-left glass rounded-2xl p-4 flex gap-3 card-hover ${
                       on ? 'ring-2 ring-brand-500' : ''
                     }`}
@@ -667,6 +698,54 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* 景点图文详情弹窗 */}
+      <AnimatePresence>
+        {detail && (() => {
+          const c = CATEGORIES[detail.category];
+          return (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setDetail(null)}
+                className="fixed inset-0 bg-black/40 z-[60]"
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 24 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                className="fixed left-1/2 bottom-6 -translate-x-1/2 w-[min(92vw,440px)] z-[70] glass rounded-2xl overflow-hidden"
+              >
+                <div className="relative h-44 w-full overflow-hidden" style={{ background: `linear-gradient(135deg, ${c.color}, ${c.color}66)` }}>
+                  {detailImg ? (
+                    <img src={detailImg} alt={detail.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-6xl">{c.emoji}</div>
+                  )}
+                  <button onClick={() => setDetail(null)} className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 text-white flex items-center justify-center hover:bg-black/60 transition">✕</button>
+                  <div className="absolute bottom-3 left-4 text-white drop-shadow">
+                    <div className="text-lg font-bold">{detail.name}</div>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: c.color + '22', color: c.color }}>{c.emoji} {c.label}</span>
+                    <span className="text-xs text-slate-500">{detail.time}</span>
+                    <span className="text-xs text-slate-500">约 {detail.durationMin ?? 90} 分钟</span>
+                    <span className="text-xs text-slate-500">约 ¥{detail.cost}</span>
+                  </div>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-3 leading-relaxed">
+                    {detail.desc || '这个地方值得一去，建议预留充足时间慢慢游览。'}
+                  </p>
+                </div>
+              </motion.div>
+            </>
+          );
+        })()}
+      </AnimatePresence>
 
       {/* 我的行程抽屉 */}
       <AnimatePresence>
