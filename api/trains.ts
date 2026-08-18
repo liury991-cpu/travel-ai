@@ -4,7 +4,7 @@ import { queryTrains, estimateFare } from './lib/railway';
 export const config = {
   runtime: 'nodejs',
   maxDuration: 30,
-  regions: ['hkg1'],
+  regions: ['hnd1'],
 };
 
 export default async function handler(req: any, res: any) {
