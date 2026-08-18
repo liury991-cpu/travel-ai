@@ -49,6 +49,7 @@ export default function App() {
   const [trains, setTrains] = useState<TrainOption[]>([]);
   const [flights, setFlights] = useState<FlightOption[]>([]);
   const [transportLoading, setTransportLoading] = useState(false);
+  const [transportSource, setTransportSource] = useState<'12306' | 'fallback' | null>(null);
 
   const [user, setUser] = useState<any>(null);
   const [saved, setSaved] = useState<SavedPlan[]>([]);
@@ -116,6 +117,7 @@ export default function App() {
       ]);
       setTrains(t.trains ?? []);
       setFlights(f.flights ?? []);
+      setTransportSource((t.source as '12306' | 'fallback') ?? '12306');
     } catch (e: any) {
       alert('交通查询失败：' + e.message);
     } finally {
@@ -580,6 +582,12 @@ export default function App() {
                     {cheapestFlight ? `${cheapestFlight.airline} ${cheapestFlight.departTime}→${cheapestFlight.arriveTime}` : '无数据'}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {transportSource === 'fallback' && (
+              <div className="mt-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 p-3 text-xs text-amber-700 dark:text-amber-300">
+                12306 实时余票暂不可用（服务端网络受限），以下高铁/机票价格为城市间距估算，仅供参考。请稍后重试或前往 12306 官网核对。
               </div>
             )}
 
