@@ -54,6 +54,7 @@ export default function App() {
   const [saved, setSaved] = useState<SavedPlan[]>([]);
   const [showPlans, setShowPlans] = useState(false);
   const [dark, setDark] = useState(false);
+  const [mapStatus, setMapStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -175,8 +176,13 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!plan || !TMAP_KEY || !mapEl.current) return;
+    if (!plan || !mapEl.current) return;
+    if (!TMAP_KEY) {
+      setMapStatus('error');
+      return;
+    }
     let cancelled = false;
+    setMapStatus('loading');
     loadTMap(TMAP_KEY)
       .then((TMap) => {
         if (cancelled) return;
@@ -188,8 +194,13 @@ export default function App() {
           });
         }
         renderDay(TMap);
+        setMapStatus('ready');
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (!cancelled) setMapStatus('error');
+        // eslint-disable-next-line no-console
+        console.warn('腾讯地图加载失败:', err?.message || err);
+      });
     return () => {
       cancelled = true;
     };
@@ -504,12 +515,29 @@ export default function App() {
 
         {/* 右：地图 + 交通 */}
         <div className="space-y-6">
-          <div className="glass rounded-2xl overflow-hidden">
+          <div className="glass rounded-2xl overflow-hidden relative">
             <div ref={mapEl} className="h-[460px] w-full">
-              {!TMAP_KEY && (
-                <div className="map-fallback">
-                  地图需要腾讯位置服务 Key。<br />
-                  在项目根目录 .env 配置 <code>VITE_TMAP_KEY</code> 后地图自动加载。
+              {mapStatus !== 'ready' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-100/80 dark:bg-slate-900/80 backdrop-blur-sm p-6 text-center z-10">
+                  <div className="text-4xl mb-3">🗺️</div>
+                  <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                    {mapStatus === 'error' ? '地图暂时无法显示' : '地图加载中…'}
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 max-w-sm mb-4">
+                    {mapStatus === 'error'
+                      ? '当前未配置腾讯位置服务 Key，或 Key 无效/未绑定当前域名。'
+                      : '正在初始化腾讯地图…'}
+                  </p>
+                  {mapStatus === 'error' && (
+                    <a
+                      href="https://lbs.qq.com/dev/console/application/mine"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm px-4 py-2 rounded-lg bg-brand-600 text-white font-medium hover:bg-brand-700 transition"
+                    >
+                      去申请腾讯地图 Key
+                    </a>
+                  )}
                 </div>
               )}
             </div>

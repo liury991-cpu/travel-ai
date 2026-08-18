@@ -8,18 +8,32 @@ declare global {
 
 export function loadTMap(key: string): Promise<any> {
   if (typeof window === 'undefined') return Promise.reject(new Error('no window'));
+  if (!key || !key.trim()) return Promise.reject(new Error('TMAP_KEY 未配置'));
   if (window.TMap) return Promise.resolve(window.TMap);
   if (window._tmapReady) return window._tmapReady;
 
   window._tmapReady = new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = `https://map.qq.com/api/gljs?v=1&key=${key}`;
+    script.src = `https://map.qq.com/api/gljs?v=1&key=${encodeURIComponent(key.trim())}`;
     script.async = true;
-    script.onload = () => resolve(window.TMap);
-    script.onerror = () => reject(new Error('腾讯地图脚本加载失败，请检查 TMAP_KEY'));
+    script.onload = () => {
+      if (!window.TMap) {
+        window._tmapReady = undefined;
+        reject(new Error('腾讯地图脚本加载后 TMap 不存在，请检查 Key 是否有效'));
+        return;
+      }
+      resolve(window.TMap);
+    };
+    script.onerror = () => {
+      window._tmapReady = undefined;
+      reject(new Error('腾讯地图脚本加载失败，请检查 TMAP_KEY'));
+    };
     document.head.appendChild(script);
   });
-  return window._tmapReady;
+  return window._tmapReady.catch((err) => {
+    window._tmapReady = undefined;
+    throw err;
+  });
 }
 
 // 生成带序号 + 类别色的圆形 SVG 图钉（data URI）
