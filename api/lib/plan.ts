@@ -1,6 +1,7 @@
 // 行程编排：优先调腾讯 travel_guide(A2A)，失败则回落 mock。
 // 输出标准化的 Plan（含每天 POI、类别、坐标、估算花费）。
 import { travelGuide, classify } from './tencent';
+import { llmPlan } from './llm';
 import type { Plan, PlanDay, PlanItem, PoiCategory } from './types';
 
 const BUDGET_WEIGHT: Record<string, Record<PoiCategory, number>> = {
@@ -61,9 +62,10 @@ export async function generatePlan(opts: {
   const { city, days, prefs, budget } = opts;
   const query = `${city}${days}天${prefs.join('')}游`;
 
-  let source: 'tencent' | 'mock' = 'tencent';
+  let source: 'tencent' | 'llm' | 'mock' = 'tencent';
   let days_list: PlanDay[] = [];
 
+  // 1) 优先腾讯 A2A（在能直连的节点上是真实结构化数据）
   try {
     const raw = await travelGuide(query);
     if (raw.plan_days.length) {
@@ -86,19 +88,32 @@ export async function generatePlan(opts: {
             poiId: p.poi_uid ?? p.poiId,
             cost,
             durationMin: p.durationMin,
-            desc: p.desc,
+            desc: p.location_desc ?? p.review ?? p.desc,
           };
         });
         return { day: i + 1, title: d.day_title ?? `第 ${i + 1} 天`, items: planItems };
       });
-    } else {
-      source = 'mock';
+      source = 'tencent';
     }
   } catch {
-    source = 'mock';
+    /* 腾讯不可达（海外节点 geo 拦截/超时）→ 走 LLM 兜底 */
   }
 
-  if (source === 'mock' || days_list.length === 0) {
+  // 2) 腾讯失败则用自己的 LLM（区域无关，从 Vercel 全球节点可直连）
+  if (days_list.length === 0) {
+    try {
+      const llmDays = await llmPlan({ city, days, prefs, budget });
+      if (llmDays.length) {
+        days_list = llmDays;
+        source = 'llm';
+      }
+    } catch (e: any) {
+      console.error('[plan] LLM 兜底失败:', e?.message);
+    }
+  }
+
+  // 3) 都没有则 mock
+  if (days_list.length === 0) {
     days_list = mockDays(city, days, budget);
     source = 'mock';
   }

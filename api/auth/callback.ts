@@ -3,6 +3,11 @@
 // 这里用最精简的实现把 code 换成 session 并写回 cookie，便于前端维持登录。
 import { createClient } from '@supabase/supabase-js';
 
+export const config = {
+  runtime: 'nodejs',
+  maxDuration: 30,
+};
+
 export default async function handler(req: any, res: any) {
   const code = req.query?.code as string | undefined;
   if (!code) return res.status(400).json({ error: 'missing code' });
