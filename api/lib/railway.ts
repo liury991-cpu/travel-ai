@@ -71,7 +71,7 @@ export async function queryTrains(
   const res = await fetch(`https://kyfw.12306.cn/otn/leftTicket/query?${params}`, {
     headers: { ...HEADERS, Cookie: cookie },
   });
-  const json = await res.json();
+  const json: any = await res.json();
   const result: string[] = json?.data?.result ?? [];
 
   return result.map((raw) => {
