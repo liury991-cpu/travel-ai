@@ -44,7 +44,7 @@ export async function travelGuide(
   };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15s 超时，快速 fallback
+  const timeout = setTimeout(() => controller.abort(), 10000); // 10s 超时，快速 fallback
   try {
     const res = await fetch(A2A_URL, {
       method: 'POST',
