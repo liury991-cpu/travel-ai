@@ -6,3 +6,8 @@ dist
 supabase/.temp
 *.log
 .DS_Store
+
+# build artifacts (keep repo clean)
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
