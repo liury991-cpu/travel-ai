@@ -86,7 +86,7 @@ export async function generatePlan(opts: {
             poiId: p.poi_uid ?? p.poiId,
             cost,
             durationMin: p.durationMin,
-            desc: p.desc,
+            desc: p.location_desc ?? p.review ?? p.desc,
           };
         });
         return { day: i + 1, title: d.day_title ?? `第 ${i + 1} 天`, items: planItems };
