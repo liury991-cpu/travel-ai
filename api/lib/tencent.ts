@@ -43,15 +43,28 @@ export async function travelGuide(
     },
   };
 
-  const res = await fetch(A2A_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify(payload),
-    // @ts-ignore Node18+ 支持
-    signal: AbortSignal.timeout(55000),
-  });
-  if (!res.ok) throw new Error('A2A HTTP ' + res.status);
-  const text = await res.text();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15s 超时，快速 fallback
+  try {
+    const res = await fetch(A2A_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error('A2A HTTP ' + res.status);
+    const text = await res.text();
+    return parseA2aText(text);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function parseA2aText(text: string): TravelGuideResult {
+  if (text.trim().startsWith('<')) {
+    throw new Error('A2A 返回 HTML 错误页，可能是海外 IP 被拦截');
+  }
+
 
   let plan_summary: any = null;
   const plan_days: any[] = [];
