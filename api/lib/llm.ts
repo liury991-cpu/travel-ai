@@ -35,19 +35,27 @@ export async function llmPlan(opts: {
     opts.prefs.join('、') || '综合（历史、美食、自然、夜生活、购物均衡）'
   }。预算档位：${budgetText}。`;
 
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: sys },
-        { role: 'user', content: user },
-      ],
-      temperature: 0.7,
-      response_format: { type: 'json_object' },
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000); // 20s 超时，避免美东节点拖死函数
+  let res: Response;
+  try {
+    res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: user },
+        ],
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const t = await res.text();
     throw new Error('LLM HTTP ' + res.status + ' ' + t.slice(0, 200));
