@@ -1,6 +1,12 @@
 // POST /api/flights  { from, to, date? } → 机票比价（演示数据）
 import { mockFlights } from './lib/flights';
 
+export const config = {
+  runtime: 'nodejs',
+  maxDuration: 30,
+  regions: ['hkg1'],
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   try {
