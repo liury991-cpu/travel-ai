@@ -5,9 +5,9 @@
   "framework": "vite",
   "rewrites": [{ "source": "/(.*)", "destination": "/" }],
   "functions": {
-    "api/plan.ts": { "maxDuration": 60 },
-    "api/trains.ts": { "maxDuration": 30 },
-    "api/flights.ts": { "maxDuration": 30 },
-    "api/auth/callback.ts": { "maxDuration": 30 }
+    "api/plan.ts": { "maxDuration": 60, "regions": ["hnd1"] },
+    "api/trains.ts": { "maxDuration": 30, "regions": ["hnd1"] },
+    "api/flights.ts": { "maxDuration": 30, "regions": ["hnd1"] },
+    "api/auth/callback.ts": { "maxDuration": 30, "regions": ["hnd1"] }
   }
 }
