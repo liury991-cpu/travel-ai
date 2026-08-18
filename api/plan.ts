@@ -4,7 +4,7 @@ import { generatePlan } from './lib/plan';
 export const config = {
   runtime: 'nodejs',
   maxDuration: 60,
-  regions: ['hkg1'], // 香港节点，离大陆近，便于直连腾讯 A2A / 12306
+  regions: ['hnd1'], // 东京节点（Hobby 放行），离大陆近，便于直连腾讯 A2A / 12306
 };
 
 export default async function handler(req: any, res: any) {
